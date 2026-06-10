@@ -1,0 +1,23 @@
+{
+	"schemaVersion": 1,
+	"id": "modern_energy",
+	"version": "${version}",
+	"name": "Modern Energy",
+	"description": "A Fabric core mod for Mechatronic Energy API development.",
+	"authors": [
+		"Modern Energy Team"
+	],
+	"license": "ARR",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.modernenergy.ModernEnergy"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~1.21.10",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
