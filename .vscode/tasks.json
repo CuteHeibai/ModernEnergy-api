@@ -1,0 +1,82 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Modern Energy: build",
+      "type": "shell",
+      "command": ".\\gradlew.bat",
+      "args": [
+        "--no-daemon",
+        "build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "C:\\Program Files\\Java\\jdk-21",
+          "PATH": "C:\\Program Files\\Java\\jdk-21\\bin;${env:PATH}"
+        }
+      },
+      "group": "build",
+      "problemMatcher": [
+        "$javac"
+      ]
+    },
+    {
+      "label": "Modern Energy: test",
+      "type": "shell",
+      "command": ".\\gradlew.bat",
+      "args": [
+        "--no-daemon",
+        "test"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "C:\\Program Files\\Java\\jdk-21",
+          "PATH": "C:\\Program Files\\Java\\jdk-21\\bin;${env:PATH}"
+        }
+      },
+      "group": "test",
+      "problemMatcher": [
+        "$javac"
+      ]
+    },
+    {
+      "label": "Modern Energy: runClient",
+      "type": "shell",
+      "command": ".\\gradlew.bat",
+      "args": [
+        "runClient"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "C:\\Program Files\\Java\\jdk-21",
+          "PATH": "C:\\Program Files\\Java\\jdk-21\\bin;${env:PATH}"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Modern Energy: prepare VSCode launch",
+      "type": "shell",
+      "command": ".\\gradlew.bat",
+      "args": [
+        "--no-daemon",
+        "vscode"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "C:\\Program Files\\Java\\jdk-21",
+          "PATH": "C:\\Program Files\\Java\\jdk-21\\bin;${env:PATH}"
+        }
+      },
+      "problemMatcher": []
+    }
+  ]
+}

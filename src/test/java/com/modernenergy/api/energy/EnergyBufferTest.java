@@ -57,4 +57,16 @@ class EnergyBufferTest {
 		assertThrows(IllegalArgumentException.class, () -> new EnergyBuffer(1, 0, -1, 0));
 		assertThrows(IllegalArgumentException.class, () -> new EnergyBuffer(1, 0, 0, -1));
 	}
+
+	@Test
+	void electricalPropertiesCanDriveTransferRates() {
+		EnergyBuffer buffer = new EnergyBuffer(10000, 0, 10, 10);
+		ElectricalProperties properties = ElectricalProperties.fromVoltageAndResistance(120.0, 12.0);
+
+		buffer.setElectricalProperties(properties, true);
+
+		assertEquals(properties, buffer.getElectricalProperties());
+		assertEquals(1200, buffer.getMaxInsert());
+		assertEquals(1200, buffer.getMaxExtract());
+	}
 }

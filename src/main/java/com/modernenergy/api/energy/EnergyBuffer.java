@@ -1,10 +1,11 @@
 package com.modernenergy.api.energy;
 
-public final class EnergyBuffer implements EnergyStorage {
+public final class EnergyBuffer implements ElectricalEnergyStorage {
 	private long energy;
 	private long capacity;
 	private long maxInsert;
 	private long maxExtract;
+	private ElectricalProperties electricalProperties = ElectricalProperties.DEFAULT;
 
 	public EnergyBuffer(long capacity, long maxInsert, long maxExtract) {
 		this(capacity, 0, maxInsert, maxExtract);
@@ -36,6 +37,11 @@ public final class EnergyBuffer implements EnergyStorage {
 		return maxExtract;
 	}
 
+	@Override
+	public ElectricalProperties getElectricalProperties() {
+		return electricalProperties;
+	}
+
 	public void setEnergy(long energy) {
 		this.energy = clamp(energy, 0, capacity);
 	}
@@ -48,6 +54,22 @@ public final class EnergyBuffer implements EnergyStorage {
 	public void setTransferRates(long maxInsert, long maxExtract) {
 		this.maxInsert = requireNonNegative(maxInsert, "maxInsert");
 		this.maxExtract = requireNonNegative(maxExtract, "maxExtract");
+	}
+
+	public void setElectricalProperties(ElectricalProperties electricalProperties) {
+		this.electricalProperties = java.util.Objects.requireNonNull(electricalProperties, "electricalProperties");
+	}
+
+	public void setElectricalProperties(ElectricalProperties electricalProperties, boolean applyTransferRate) {
+		setElectricalProperties(electricalProperties);
+		if (applyTransferRate) {
+			applyElectricalTransferRate();
+		}
+	}
+
+	public void applyElectricalTransferRate() {
+		long transferRate = electricalProperties.toEnergyRate();
+		setTransferRates(transferRate, transferRate);
 	}
 
 	@Override

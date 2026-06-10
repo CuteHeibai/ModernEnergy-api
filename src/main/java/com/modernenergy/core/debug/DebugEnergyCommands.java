@@ -1,5 +1,8 @@
 package com.modernenergy.core.debug;
 
+import com.modernenergy.api.energy.ElectricalEnergyStorage;
+import com.modernenergy.api.energy.ElectricalProperties;
+import com.modernenergy.api.energy.ElectricalUnits;
 import com.modernenergy.api.energy.EnergyAction;
 import com.modernenergy.api.energy.EnergyBuffer;
 import com.modernenergy.api.energy.EnergyStorage;
@@ -7,6 +10,7 @@ import com.modernenergy.api.energy.EnergyTransfer;
 import com.modernenergy.api.energy.EnergyUnits;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -14,6 +18,7 @@ import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 
 public final class DebugEnergyCommands {
@@ -25,12 +30,14 @@ public final class DebugEnergyCommands {
 				dispatcher.register(CommandManager.literal("modernenergy")
 						.requires(source -> source.hasPermissionLevel(2))
 						.then(CommandManager.literal("energy")
+								.then(helpCommand())
 								.then(createCommand())
 								.then(infoCommand())
 								.then(operationCommand("insert", EnergyOperation.INSERT))
 								.then(operationCommand("extract", EnergyOperation.EXTRACT))
 								.then(operationCommand("consume", EnergyOperation.CONSUME))
 								.then(setRateCommand())
+								.then(setElectricalCommand())
 								.then(transferCommand())
 								.then(clearCommand()))));
 	}
@@ -46,6 +53,11 @@ public final class DebugEnergyCommands {
 												.executes(DebugEnergyCommands::create)
 												.then(CommandManager.argument("maxExtract", LongArgumentType.longArg(0))
 														.executes(DebugEnergyCommands::create))))));
+	}
+
+	private static LiteralArgumentBuilder<ServerCommandSource> helpCommand() {
+		return CommandManager.literal("help")
+				.executes(DebugEnergyCommands::help);
 	}
 
 	private static LiteralArgumentBuilder<ServerCommandSource> infoCommand() {
@@ -70,6 +82,16 @@ public final class DebugEnergyCommands {
 						.then(CommandManager.argument("maxInsert", LongArgumentType.longArg(0))
 								.then(CommandManager.argument("maxExtract", LongArgumentType.longArg(0))
 										.executes(DebugEnergyCommands::setRate))));
+	}
+
+	private static LiteralArgumentBuilder<ServerCommandSource> setElectricalCommand() {
+		return CommandManager.literal("set-electrical")
+				.then(CommandManager.argument("id", StringArgumentType.word())
+						.then(CommandManager.argument("voltage", DoubleArgumentType.doubleArg(Double.MIN_NORMAL))
+								.then(CommandManager.argument("resistance", DoubleArgumentType.doubleArg(Double.MIN_NORMAL))
+										.executes(context -> setElectrical(context, true))
+										.then(CommandManager.argument("applyRate", BoolArgumentType.bool())
+												.executes(context -> setElectrical(context, BoolArgumentType.getBool(context, "applyRate")))))));
 	}
 
 	private static LiteralArgumentBuilder<ServerCommandSource> transferCommand() {
@@ -98,25 +120,29 @@ public final class DebugEnergyCommands {
 		boolean replacing = DebugEnergyRegistry.contains(id);
 
 		EnergyBuffer buffer = DebugEnergyRegistry.create(id, capacity, energy, maxInsert, maxExtract);
-		return send(context, (replacing ? "Replaced " : "Created ") + id + ": " + format(buffer));
+		return send(context, Text.translatable(
+				replacing ? "commands.modern_energy.energy.replaced" : "commands.modern_energy.energy.created",
+				id,
+				format(buffer)));
 	}
 
 	private static int list(CommandContext<ServerCommandSource> context) {
 		if (DebugEnergyRegistry.snapshot().isEmpty()) {
-			return send(context, "No debug energy buffers exist.");
+			return send(context, Text.translatable("commands.modern_energy.energy.none"));
 		}
 
-		StringBuilder builder = new StringBuilder("Debug energy buffers:");
+		MutableText builder = Text.translatable("commands.modern_energy.energy.list.header");
 		DebugEnergyRegistry.snapshot().forEach((id, buffer) ->
-				builder.append("\n- ").append(id).append(": ").append(format(buffer)));
-		return send(context, builder.toString());
+				builder.append(Text.literal("\n- "))
+						.append(Text.translatable("commands.modern_energy.energy.list.entry", id, format(buffer))));
+		return send(context, builder);
 	}
 
 	private static int info(CommandContext<ServerCommandSource> context) {
 		String id = StringArgumentType.getString(context, "id");
 		return DebugEnergyRegistry.get(id)
-				.map(buffer -> send(context, id + ": " + format(buffer)))
-				.orElseGet(() -> error(context, "Unknown debug energy buffer: " + id));
+				.map(buffer -> send(context, Text.translatable("commands.modern_energy.energy.info", id, format(buffer))))
+				.orElseGet(() -> error(context, Text.translatable("commands.modern_energy.energy.unknown", id)));
 	}
 
 	private static int operate(CommandContext<ServerCommandSource> context, EnergyOperation operation, boolean simulate) {
@@ -126,22 +152,30 @@ public final class DebugEnergyCommands {
 
 		return DebugEnergyRegistry.get(id)
 				.map(buffer -> {
-					long changed = switch (operation) {
-						case INSERT -> buffer.insert(amount, action);
-						case EXTRACT -> buffer.extract(amount, action);
-						case CONSUME -> buffer.consume(amount, action) ? amount : 0;
+					Text message = switch (operation) {
+						case INSERT -> {
+							long changed = buffer.insert(amount, action);
+							yield Text.translatable("commands.modern_energy.energy.insert",
+									prefix(simulate), EnergyUnits.format(changed), id, format(buffer));
+						}
+						case EXTRACT -> {
+							long changed = buffer.extract(amount, action);
+							yield Text.translatable("commands.modern_energy.energy.extract",
+									prefix(simulate), EnergyUnits.format(changed), id, format(buffer));
+						}
+						case CONSUME -> {
+							boolean consumed = buffer.consume(amount, action);
+							yield consumed
+									? Text.translatable("commands.modern_energy.energy.consume",
+											prefix(simulate), EnergyUnits.format(amount), id, format(buffer))
+									: Text.translatable("commands.modern_energy.energy.consume.fail",
+											prefix(simulate), EnergyUnits.format(amount), id, format(buffer));
+						}
 					};
 
-					String verb = switch (operation) {
-						case INSERT -> "Inserted ";
-						case EXTRACT -> "Extracted ";
-						case CONSUME -> "Consumed ";
-					};
-
-					return send(context, prefix(simulate) + verb + EnergyUnits.format(changed) + " on " + id
-							+ "; now " + format(buffer));
+					return send(context, message);
 				})
-				.orElseGet(() -> error(context, "Unknown debug energy buffer: " + id));
+				.orElseGet(() -> error(context, Text.translatable("commands.modern_energy.energy.unknown", id)));
 	}
 
 	private static int setRate(CommandContext<ServerCommandSource> context) {
@@ -152,9 +186,27 @@ public final class DebugEnergyCommands {
 		return DebugEnergyRegistry.get(id)
 				.map(buffer -> {
 					buffer.setTransferRates(maxInsert, maxExtract);
-					return send(context, "Updated rates for " + id + ": " + format(buffer));
+					return send(context, Text.translatable("commands.modern_energy.energy.set_rate", id, format(buffer)));
 				})
-				.orElseGet(() -> error(context, "Unknown debug energy buffer: " + id));
+				.orElseGet(() -> error(context, Text.translatable("commands.modern_energy.energy.unknown", id)));
+	}
+
+	private static int setElectrical(CommandContext<ServerCommandSource> context, boolean applyRate) {
+		String id = StringArgumentType.getString(context, "id");
+		double voltage = DoubleArgumentType.getDouble(context, "voltage");
+		double resistance = DoubleArgumentType.getDouble(context, "resistance");
+		ElectricalProperties properties = ElectricalProperties.fromVoltageAndResistance(voltage, resistance);
+
+		return DebugEnergyRegistry.get(id)
+				.map(buffer -> {
+					buffer.setElectricalProperties(properties, applyRate);
+					Text mode = Text.translatable(applyRate
+							? "commands.modern_energy.energy.set_electrical.applied"
+							: "commands.modern_energy.energy.set_electrical.metadata");
+					return send(context, Text.translatable("commands.modern_energy.energy.set_electrical",
+							id, formatElectrical(properties), mode, format(buffer)));
+				})
+				.orElseGet(() -> error(context, Text.translatable("commands.modern_energy.energy.unknown", id)));
 	}
 
 	private static int transfer(CommandContext<ServerCommandSource> context, boolean simulate) {
@@ -163,45 +215,69 @@ public final class DebugEnergyCommands {
 		long amount = LongArgumentType.getLong(context, "amount");
 
 		if (sourceId.equals(targetId)) {
-			return error(context, "Source and target must be different.");
+			return error(context, Text.translatable("commands.modern_energy.energy.same_buffer"));
 		}
 
 		EnergyBuffer source = DebugEnergyRegistry.get(sourceId).orElse(null);
 		EnergyBuffer target = DebugEnergyRegistry.get(targetId).orElse(null);
 
 		if (source == null) {
-			return error(context, "Unknown source debug energy buffer: " + sourceId);
+			return error(context, Text.translatable("commands.modern_energy.energy.unknown_source", sourceId));
 		}
 		if (target == null) {
-			return error(context, "Unknown target debug energy buffer: " + targetId);
+			return error(context, Text.translatable("commands.modern_energy.energy.unknown_target", targetId));
 		}
 
 		long moved = EnergyTransfer.transfer(source, target, amount, simulate ? EnergyAction.SIMULATE : EnergyAction.EXECUTE);
-		return send(context, prefix(simulate) + "Transferred " + EnergyUnits.format(moved) + " from " + sourceId
-				+ " to " + targetId + ". Source " + format(source) + "; target " + format(target));
+		return send(context, Text.translatable("commands.modern_energy.energy.transfer",
+				prefix(simulate), EnergyUnits.format(moved), sourceId, targetId, format(source), format(target)));
 	}
 
 	private static int clearAll(CommandContext<ServerCommandSource> context) {
 		int count = DebugEnergyRegistry.clear();
-		return send(context, "Cleared " + count + " debug energy buffers.");
+		return send(context, Text.translatable("commands.modern_energy.energy.clear.all", count));
 	}
 
 	private static int clearOne(CommandContext<ServerCommandSource> context) {
 		String id = StringArgumentType.getString(context, "id");
 		if (DebugEnergyRegistry.remove(id)) {
-			return send(context, "Cleared debug energy buffer: " + id);
+			return send(context, Text.translatable("commands.modern_energy.energy.clear.one", id));
 		}
-		return error(context, "Unknown debug energy buffer: " + id);
+		return error(context, Text.translatable("commands.modern_energy.energy.unknown", id));
 	}
 
-	private static String format(EnergyStorage storage) {
-		return EnergyUnits.format(storage.getEnergy()) + "/" + EnergyUnits.format(storage.getCapacity())
-				+ " (in " + EnergyUnits.format(storage.getMaxInsert())
-				+ "/out " + EnergyUnits.format(storage.getMaxExtract()) + ")";
+	private static int help(CommandContext<ServerCommandSource> context) {
+		return send(context, Text.translatable("commands.modern_energy.energy.help"));
 	}
 
-	private static String prefix(boolean simulate) {
-		return simulate ? "Simulated: " : "";
+	private static Text format(EnergyStorage storage) {
+		Text base = Text.translatable("commands.modern_energy.energy.format",
+				EnergyUnits.format(storage.getEnergy()),
+				EnergyUnits.format(storage.getCapacity()),
+				EnergyUnits.format(storage.getMaxInsert()),
+				EnergyUnits.format(storage.getMaxExtract()));
+
+		if (storage instanceof ElectricalEnergyStorage electricalStorage) {
+			return Text.translatable("commands.modern_energy.energy.format.electrical",
+					base, formatElectrical(electricalStorage.getElectricalProperties()));
+		}
+
+		return base;
+	}
+
+	private static Text formatElectrical(ElectricalProperties properties) {
+		return Text.translatable("commands.modern_energy.energy.electrical",
+				ElectricalUnits.formatVoltage(properties.voltage()),
+				ElectricalUnits.formatCurrent(properties.current()),
+				ElectricalUnits.formatResistance(properties.resistance()),
+				ElectricalUnits.formatFrequency(properties.frequency()),
+				ElectricalUnits.formatPower(properties.power()));
+	}
+
+	private static Text prefix(boolean simulate) {
+		return simulate
+				? Text.translatable("commands.modern_energy.energy.simulated")
+				: Text.empty();
 	}
 
 	private static long optionalLong(CommandContext<ServerCommandSource> context, String name, long fallback) {
@@ -212,13 +288,13 @@ public final class DebugEnergyCommands {
 		}
 	}
 
-	private static int send(CommandContext<ServerCommandSource> context, String message) {
-		context.getSource().sendFeedback(() -> Text.literal(message), false);
+	private static int send(CommandContext<ServerCommandSource> context, Text message) {
+		context.getSource().sendFeedback(() -> message, false);
 		return Command.SINGLE_SUCCESS;
 	}
 
-	private static int error(CommandContext<ServerCommandSource> context, String message) {
-		context.getSource().sendError(Text.literal(message));
+	private static int error(CommandContext<ServerCommandSource> context, Text message) {
+		context.getSource().sendError(message);
 		return 0;
 	}
 
